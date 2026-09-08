@@ -243,6 +243,7 @@
           <div class="block" draggable="true" data-type="divider"><span class="ic">—</span> Divider</div>
           <div class="block" draggable="true" data-type="section"><span class="ic">▢</span> Section / box</div>
           <div class="block" draggable="true" data-type="embed"><span class="ic">&lt;/&gt;</span> Embed HTML</div>
+          <div class="block" draggable="true" data-type="map"><span class="ic">📍</span> Map embed</div>
           <div class="hint">Right-click any element to delete it, change its layer order, or change its color. Switch device and drag/resize to give that size its own layout — other sizes stay as they were.</div>
         </div>
       </div>
@@ -310,7 +311,11 @@
       </div>
       <div class="field"><label>Footer font</label><select id="footerFontInput"></select></div>
       <div class="field"><label>Background image URL (optional)</label><input type="text" id="footerImageInput" placeholder="https://example.com/pattern.jpg"></div>
-      <p style="font-size:12px;color:var(--text-2);margin-bottom:0;">Every page ends with this footer, and it always includes a small "Powered by Invisi" link back to invisi.site — that part isn't editable or removable from here, but everything else about the footer is yours to customize.</p>
+      <div class="field">
+        <label>"Powered by Invisi" badge</label>
+        <button class="toggle-chip active" id="watermarkToggle">Badge shown</button>
+      </div>
+      <p style="font-size:12px;color:var(--text-2);margin-bottom:0;">Every page can end with this footer. The "Powered by Invisi" badge is free to remove for now — once monthly plans launch, keeping it off will require an active subscription.</p>
     </div>
     <div class="modal-foot"><button class="btn primary" id="doneSiteSettingsBtn">Done</button></div>
   </div>
@@ -412,6 +417,7 @@
   let navFont = 'Roboto';
   let navTransparentUntilScroll = false;
   let pageWidth = 'none';
+  let removeWatermark = false;
 
   function fontOptionsHtml(sel){ return FONT_OPTIONS.map(f=>`<option value="${f}" ${f===sel?'selected':''}>${f}</option>`).join(''); }
 
@@ -470,12 +476,19 @@
   const footerImageInput = document.getElementById('footerImageInput');
   const footerFontInput = document.getElementById('footerFontInput');
   const footerPreview = document.getElementById('footer-preview');
+  const watermarkToggle = document.getElementById('watermarkToggle');
   footerTextInput.addEventListener('input', ()=>{ footerCustomText = footerTextInput.value; renderFooterPreview(); });
   footerBgInput.addEventListener('input', ()=>{ footerBg = footerBgInput.value; renderFooterPreview(); });
   footerTextColorInput.addEventListener('input', ()=>{ footerTextColor = footerTextColorInput.value; renderFooterPreview(); });
   footerImageInput.addEventListener('input', ()=>{ footerImage = footerImageInput.value.trim(); renderFooterPreview(); });
   footerFontInput.innerHTML = fontOptionsHtml(footerFont);
   footerFontInput.addEventListener('change', ()=>{ footerFont = footerFontInput.value; ensureFontLoaded(footerFont); renderFooterPreview(); });
+  watermarkToggle.addEventListener('click', e=>{
+    removeWatermark = !removeWatermark;
+    e.currentTarget.classList.toggle('active', !removeWatermark);
+    e.currentTarget.textContent = removeWatermark ? 'Badge hidden' : 'Badge shown';
+    renderFooterPreview();
+  });
 
   function renderFooterPreview(){
     footerPreview.style.width = deviceW+'px';
@@ -486,7 +499,7 @@
     footerPreview.style.fontFamily = `'${footerFont}',sans-serif`;
     footerPreview.innerHTML = `
       <span class="ft-custom">${footerCustomText ? footerCustomText.replace(/</g,'&lt;') : '<span style="opacity:.5;">(no custom footer text set)</span>'}</span>
-      <a class="ft-watermark" href="https://invisi.site" target="_blank" rel="noopener">${icon('home',11)} Powered by Invisi</a>
+      ${removeWatermark ? '' : `<a class="ft-watermark" href="https://invisi.site" target="_blank" rel="noopener">${icon('home',11)} Powered by Invisi</a>`}
     `;
   }
   renderFooterPreview();
@@ -739,9 +752,10 @@
       case 'divider': return {...app,w:80,h:1.5,color:'#DADCE0'};
       case 'section': return {...app,w:50,h:22,bg:'#E8F0FE',radius:10};
       case 'embed': return {...app,w:40,h:26,htmlraw:'<!-- Paste an <iframe> or custom HTML here -->\n<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif;color:#667;">Embed area</div>'};
+      case 'map': return {...app,w:40,h:34,radius:10,maptitle:'My Service Area',mapsubtitle:'Coverage Map',mapfont:'Lora',maptint:'#1A73E8',mapcoords:'',mappopup:'Your business name here',mapgrayscale:'1',mapscrollzoom:'0',mapshowheader:'1'};
     }
   }
-  function iconFor(type){ return {heading:'H',text:'¶',image:'▧',button:'▸',divider:'—',section:'▢',embed:'</>'}[type]; }
+  function iconFor(type){ return {heading:'H',text:'¶',image:'▧',button:'▸',divider:'—',section:'▢',embed:'</>',map:'📍'}[type]; }
 
   function buildElementNode(type, geom, datasetOverride){
     elCount++;
@@ -812,7 +826,7 @@
     return `-webkit-text-stroke:${bw}px ${d.bordercolor||'#DADCE0'};paint-order:stroke fill;`;
   }
   function usesBoxStroke(type, d){
-    if(['image','section','divider','embed'].includes(type)) return true;
+    if(['image','section','divider','embed','map'].includes(type)) return true;
     if(type==='button') return (!d.strokeon || d.strokeon==='box' || d.strokeon==='both');
     return false;
   }
@@ -828,8 +842,83 @@
   function escapeAttr(str){
     return String(str==null?'':str).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   }
+  function escapeHtml(str){
+    return String(str==null?'':str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function iframeSrcdocHTML(rawHtml, interactive){
+    return `<iframe srcdoc="${escapeAttr(rawHtml)}" style="width:100%;height:100%;border:0;display:block;pointer-events:${interactive?'auto':'none'};" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation allow-popups-to-escape-sandbox" loading="lazy" title="Embedded content"></iframe>`;
+  }
   function embedIframeHTML(d, interactive){
-    return `<iframe srcdoc="${escapeAttr(d.htmlraw)}" style="width:100%;height:100%;border:0;display:block;pointer-events:${interactive?'auto':'none'};" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation allow-popups-to-escape-sandbox" loading="lazy" title="Embedded content"></iframe>`;
+    return iframeSrcdocHTML(d.htmlraw, interactive);
+  }
+
+  // ---------- map embed doc generator ----------
+  function generateMapDoc(d){
+    const font = d.mapfont || 'Lora';
+    const tint = d.maptint || '#1A73E8';
+    const title = escapeHtml(d.maptitle||'');
+    const subtitle = escapeHtml(d.mapsubtitle||'');
+    const showHeader = d.mapshowheader !== '0';
+    const grayscaleOn = d.mapgrayscale !== '0';
+    const scrollZoom = d.mapscrollzoom === '1';
+    const fontParam = encodeURIComponent(font)+':wght@400;500;600;700';
+    const coordsRaw = (d.mapcoords||'').trim();
+    return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=${fontParam}&display=swap" rel="stylesheet">
+<style>
+  body,html{margin:0;padding:0;height:100%;width:100%;background:transparent;font-family:'${font}',serif;overflow:hidden;}
+  .map-widget-container{width:100%;height:100%;overflow:hidden;display:flex;flex-direction:column;background:#fff;}
+  .map-widget-header{padding:14px 18px;background:${tint};display:${showHeader?'flex':'none'};align-items:center;justify-content:space-between;flex-shrink:0;}
+  .map-widget-title{font-family:'${font}',serif;font-size:15px;font-weight:600;color:#fff;margin:0;}
+  .map-widget-subtitle{font-family:'${font}',serif;font-size:11px;color:rgba(255,255,255,.9);margin:0;font-style:italic;}
+  #map{width:100%;flex-grow:1;position:relative;touch-action:pan-x pan-y;}
+  ${grayscaleOn ? `.leaflet-tile-pane{filter:grayscale(100%) contrast(1.05) brightness(1.05);}
+  .map-tint-overlay{position:absolute;inset:0;background:${tint};mix-blend-mode:color;opacity:.55;pointer-events:none;z-index:399;}` : ''}
+  .leaflet-control-zoom{border:none !important;box-shadow:0 4px 12px rgba(0,0,0,.15) !important;border-radius:8px !important;overflow:hidden;margin-top:12px !important;margin-left:12px !important;}
+  .leaflet-control-zoom a{background-color:${tint} !important;color:#fff !important;border-bottom:1px solid rgba(255,255,255,.2) !important;width:30px !important;height:30px !important;line-height:30px !important;font-size:15px !important;font-weight:bold;}
+  .leaflet-control-zoom-out{border-bottom:none !important;}
+  .leaflet-popup-content-wrapper{font-family:'${font}',serif;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);}
+  .leaflet-popup-content{font-family:'${font}',serif;font-size:13px;color:#1e293b;line-height:1.5;margin:10px 14px;}
+  .leaflet-control-attribution{display:none !important;}
+</style></head>
+<body>
+  <div class="map-widget-container">
+    ${showHeader?`<div class="map-widget-header"><div><h2 class="map-widget-title">${title}</h2><p class="map-widget-subtitle">${subtitle}</p></div></div>`:''}
+    <div id="map">${grayscaleOn?'<div class="map-tint-overlay"></div>':''}</div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+  <script>
+    var map = L.map('map', {zoomControl:true, dragging:true, scrollWheelZoom:${scrollZoom}, doubleClickZoom:false});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+    var rawCoordsText = ${JSON.stringify(coordsRaw)};
+    var geojsonData = null;
+    try {
+      if(rawCoordsText){
+        var parsed = JSON.parse(rawCoordsText);
+        if(parsed && parsed.type === 'FeatureCollection'){ geojsonData = parsed; }
+        else if(parsed && parsed.type === 'Feature'){ geojsonData = {type:'FeatureCollection', features:[parsed]}; }
+        else if(Array.isArray(parsed)){
+          geojsonData = {type:'FeatureCollection', features:[{type:'Feature', geometry:{type:'Polygon', coordinates:[parsed]}, properties:{}}]};
+        }
+      }
+    } catch(e){ geojsonData = null; }
+    if(!geojsonData){
+      geojsonData = {type:'FeatureCollection', features:[{type:'Feature', geometry:{type:'Polygon', coordinates:[[[-122.42,37.79],[-122.40,37.79],[-122.40,37.77],[-122.42,37.77],[-122.42,37.79]]]}, properties:{}}]};
+    }
+    var serviceLayer = L.geoJSON(geojsonData, {
+      style: function(){ return {color:'${tint}', weight:3, fillColor:'${tint}', fillOpacity:.35}; }
+    }).addTo(map);
+    var popupHtml = ${JSON.stringify(d.mappopup||'')};
+    if(popupHtml) serviceLayer.bindPopup(popupHtml);
+    try{ map.fitBounds(serviceLayer.getBounds()); }catch(e){ map.setView([37.78,-122.41], 10); }
+  <\/script>
+</body></html>`;
+  }
+  function mapIframeHTML(d, interactive){
+    return iframeSrcdocHTML(generateMapDoc(d), interactive);
   }
 
   function applyWrapperAppearance(el){
@@ -867,6 +956,8 @@
       inner.innerHTML = `<div class="section-block" style="background:${d.bg};border-radius:${radiusCSS(d)};"></div>`;
     } else if(type==='embed'){
       inner.innerHTML = `<div class="embed-wrap" style="border-radius:${radiusCSS(d)};">${embedIframeHTML(d, previewing)}</div>`;
+    } else if(type==='map'){
+      inner.innerHTML = `<div class="embed-wrap" style="border-radius:${radiusCSS(d)};">${mapIframeHTML(d, previewing)}</div>`;
     }
     applyWrapperAppearance(el);
   }
@@ -1191,6 +1282,18 @@
       html += field('HTML / iframe embed code', `<textarea id="f_htmlraw" style="min-height:130px;">${d.htmlraw}</textarea>`);
     } else if(type==='divider'){
       html += field('Color', `<input type="color" id="f_color" value="${toHex(d.color)}">`);
+    } else if(type==='map'){
+      html += field('Map title', `<input type="text" id="f_maptitle" value="${d.maptitle||''}">`);
+      html += field('Map subtitle', `<input type="text" id="f_mapsubtitle" value="${d.mapsubtitle||''}">`);
+      html += field('Header bar', `<button type="button" class="toggle-chip ${d.mapshowheader!=='0'?'active':''}" id="f_mapshowheader">${d.mapshowheader!=='0'?'Header shown':'Header hidden'}</button>`);
+      html += field('Font', `<select id="f_mapfont">${fontOptions(d.mapfont)}</select>`);
+      html += `<div class="sec-title">Service area</div>`;
+      html += field('Tint color', `<input type="color" id="f_maptint" value="${toHex(d.maptint)}">`);
+      html += field('Map tile style', `<button type="button" class="toggle-chip ${d.mapgrayscale!=='0'?'active':''}" id="f_mapgrayscale">${d.mapgrayscale!=='0'?'Tinted / branded':'Normal map colors'}</button>`);
+      html += field('Zoom control', `<button type="button" class="toggle-chip ${d.mapscrollzoom==='1'?'active':''}" id="f_mapscrollzoom">${d.mapscrollzoom==='1'?'Scroll wheel zooms':'Scroll wheel scrolls page'}</button>`);
+      html += field('Popup text (shown when area is clicked)', `<input type="text" id="f_mappopup" value="${d.mappopup||''}">`);
+      html += field('Service area coordinates', `<textarea id="f_mapcoords" placeholder="Paste GeoJSON, or a ring like [[-122.1,37.4],[-122.0,37.4],[-122.0,37.3],[-122.1,37.4]]">${d.mapcoords||''}</textarea>`);
+      html += `<div class="insp-empty" style="margin-top:-6px;">Paste a GeoJSON Feature/FeatureCollection, or a plain array of [longitude, latitude] points outlining your service area. Leave blank to show a placeholder area — it auto-fits and re-centers the map either way.</div>`;
     }
 
     if(type==='heading' || type==='text'){
@@ -1200,12 +1303,12 @@
       html += `<div class="sec-title">Stroke</div>`;
       html += `<div class="row3">${field('Width (px)',`<input type="text" id="f_border" value="${d.border}">`)}${field('Color',`<input type="color" id="f_bordercolor" value="${toHex(d.bordercolor)}">`)}${field('Style',`<select id="f_borderstyle"><option value="solid" ${d.borderstyle==='solid'?'selected':''}>Solid</option><option value="dashed" ${d.borderstyle==='dashed'?'selected':''}>Dashed</option><option value="dotted" ${d.borderstyle==='dotted'?'selected':''}>Dotted</option></select>`)}</div>`;
       html += field('Applies to', `<select id="f_strokeon"><option value="box" ${d.strokeon==='box'?'selected':''}>Button box</option><option value="text" ${d.strokeon==='text'?'selected':''}>Label text</option><option value="both" ${d.strokeon==='both'?'selected':''}>Both</option></select>`);
-    } else if(type==='image' || type==='section' || type==='embed'){
+    } else if(type==='image' || type==='section' || type==='embed' || type==='map'){
       html += `<div class="sec-title">Border</div>`;
       html += `<div class="row3">${field('Width (px)',`<input type="text" id="f_border" value="${d.border}">`)}${field('Color',`<input type="color" id="f_bordercolor" value="${toHex(d.bordercolor)}">`)}${field('Style',`<select id="f_borderstyle"><option value="solid" ${d.borderstyle==='solid'?'selected':''}>Solid</option><option value="dashed" ${d.borderstyle==='dashed'?'selected':''}>Dashed</option><option value="dotted" ${d.borderstyle==='dotted'?'selected':''}>Dotted</option></select>`)}</div>`;
     }
 
-    if(['image','section','embed','button'].includes(type)){
+    if(['image','section','embed','button','map'].includes(type)){
       html += `<div class="sec-title">Corners</div>`;
       html += field('Radius (px)', `<input type="text" id="f_radius" value="${d.radius}">`);
       html += cornerGrid(d);
@@ -1244,11 +1347,15 @@
     bindInput('f_html','html'); bindInput('f_htmlraw','htmlraw'); bindInput('f_src','src');
     bindInput('f_color','color'); bindInput('f_bg','bg'); bindInput('f_fs','fs'); bindInput('f_radius','radius');
     bindInput('f_href','href'); bindInput('f_border','border'); bindInput('f_bordercolor','bordercolor');
+    bindInput('f_maptitle','maptitle'); bindInput('f_mapsubtitle','mapsubtitle'); bindInput('f_mappopup','mappopup');
+    bindInput('f_mapcoords','mapcoords'); bindInput('f_maptint','maptint');
 
     const alignSel = document.getElementById('f_align');
     if(alignSel) alignSel.addEventListener('change', ()=>{ pushUndo(); d.align=alignSel.value; renderInner(el); });
     const fontSel = document.getElementById('f_font');
     if(fontSel) fontSel.addEventListener('change', ()=>{ pushUndo(); d.font=fontSel.value; renderInner(el); });
+    const mapFontSel = document.getElementById('f_mapfont');
+    if(mapFontSel) mapFontSel.addEventListener('change', ()=>{ pushUndo(); d.mapfont=mapFontSel.value; renderInner(el); });
     const borderStyleSel = document.getElementById('f_borderstyle');
     if(borderStyleSel) borderStyleSel.addEventListener('change', ()=>{ pushUndo(); d.borderstyle=borderStyleSel.value; renderInner(el); });
     const strokeOnSel = document.getElementById('f_strokeon');
@@ -1263,6 +1370,19 @@
     const transdurR = document.getElementById('f_transdur');
     if(transdurR) transdurR.addEventListener('focus', ()=> pushUndo());
     if(transdurR) transdurR.addEventListener('input', ()=>{ d.transdur=transdurR.value; buildInspector(el); });
+
+    const mapShowHeaderBtn = document.getElementById('f_mapshowheader');
+    if(mapShowHeaderBtn) mapShowHeaderBtn.addEventListener('click', ()=>{
+      pushUndo(); d.mapshowheader = (d.mapshowheader==='0') ? '1' : '0'; renderInner(el); buildInspector(el);
+    });
+    const mapGrayscaleBtn = document.getElementById('f_mapgrayscale');
+    if(mapGrayscaleBtn) mapGrayscaleBtn.addEventListener('click', ()=>{
+      pushUndo(); d.mapgrayscale = (d.mapgrayscale==='0') ? '1' : '0'; renderInner(el); buildInspector(el);
+    });
+    const mapScrollZoomBtn = document.getElementById('f_mapscrollzoom');
+    if(mapScrollZoomBtn) mapScrollZoomBtn.addEventListener('click', ()=>{
+      pushUndo(); d.mapscrollzoom = (d.mapscrollzoom==='1') ? '0' : '1'; renderInner(el); buildInspector(el);
+    });
 
     ['rtl','rtr','rbl','rbr'].forEach(c=>{
       const btn = document.getElementById('f_'+c);
@@ -1346,6 +1466,8 @@
     footerTextInput.value = footerCustomText; footerBgInput.value = footerBg;
     footerTextColorInput.value = footerTextColor; footerImageInput.value = footerImage;
     footerFontInput.value = footerFont;
+    watermarkToggle.classList.toggle('active', !removeWatermark);
+    watermarkToggle.textContent = removeWatermark ? 'Badge hidden' : 'Badge shown';
     siteSettingsModal.classList.add('open');
   });
   document.getElementById('closeSiteSettingsModal').addEventListener('click', ()=> siteSettingsModal.classList.remove('open'));
@@ -1377,6 +1499,7 @@
       else if(type==='divider') inner = `<hr style="width:100%;border:none;border-top:2px solid ${d.color||'#DADCE0'};margin:0;">`;
       else if(type==='section') inner = `<div style="width:100%;height:100%;background:${d.bg};border-radius:${radiusCSS(d)};"></div>`;
       else if(type==='embed') inner = embedIframeHTML(d, true);
+      else if(type==='map') inner = mapIframeHTML(d, true);
       body += `      <div style="${style}">\n        ${inner}\n      </div>\n`;
     });
     return body;
@@ -1427,6 +1550,29 @@ window.addEventListener('scroll', function(){
     <div class="footer-custom">${footerCustomText || ''}</div>
   </footer>`;
 
+    const watermarkScript = removeWatermark ? '' : `
+(function(){
+  function ew(){
+    var f = document.querySelector('.site-footer');
+    if(!f){
+      f = document.createElement('footer');
+      f.className = 'site-footer';
+      f.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;padding:14px 20px;';
+      document.body.appendChild(f);
+    }
+    if(f.querySelector('.footer-watermark')) return;
+    var a = document.createElement('a');
+    a.className = 'footer-watermark';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.href = atob('aHR0cHM6Ly9pbnZpc2kuc2l0ZQ==');
+    a.innerHTML = atob('UG93ZXJlZCBieSA8c3Ryb25nPkludmlzaTwvc3Ryb25nPg==');
+    f.appendChild(a);
+  }
+  ew();
+  new MutationObserver(ew).observe(document.body, {childList:true, subtree:true});
+  setInterval(ew, 2000);
+})();`;
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1470,27 +1616,7 @@ function invisiGoTo(slug){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 ${scrollScript}
-(function(){
-  function ew(){
-    var f = document.querySelector('.site-footer');
-    if(!f){
-      f = document.createElement('footer');
-      f.className = 'site-footer';
-      f.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;padding:14px 20px;';
-      document.body.appendChild(f);
-    }
-    if(f.querySelector('.footer-watermark')) return;
-    var a = document.createElement('a');
-    a.className = 'footer-watermark';
-    a.target = '_blank'; a.rel = 'noopener';
-    a.href = atob('aHR0cHM6Ly9pbnZpc2kuc2l0ZQ==');
-    a.innerHTML = atob('UG93ZXJlZCBieSA8c3Ryb25nPkludmlzaTwvc3Ryb25nPg==');
-    f.appendChild(a);
-  }
-  ew();
-  new MutationObserver(ew).observe(document.body, {childList:true, subtree:true});
-  setInterval(ew, 2000);
-})();
+${watermarkScript}
 <\/script>
 </body>
 </html>`;
@@ -1532,7 +1658,7 @@ ${scrollScript}
   // ---------- save / open project ----------
   function projectData(){
     serializeCurrentPage();
-    return {version:7, siteTitle, navbarEnabled, navbarBg, navbarText, navLogo, navFont, navTransparentUntilScroll, pageWidth, footerCustomText, footerBg, footerTextColor, footerImage, footerFont, pages, pageOrder, currentPageId};
+    return {version:8, siteTitle, navbarEnabled, navbarBg, navbarText, navLogo, navFont, navTransparentUntilScroll, pageWidth, footerCustomText, footerBg, footerTextColor, footerImage, footerFont, removeWatermark, pages, pageOrder, currentPageId};
   }
   document.getElementById('saveBtn').addEventListener('click', ()=>{
     const blob = new Blob([JSON.stringify(projectData(),null,2)], {type:'application/json'});
@@ -1559,6 +1685,9 @@ ${scrollScript}
         footerCustomText = data.footerCustomText || ''; footerBg = data.footerBg || '#F1F3F4';
         footerTextColor = data.footerTextColor || '#5F6368'; footerImage = data.footerImage || '';
         footerFont = data.footerFont || 'Roboto'; footerFontInput.value = footerFont;
+        removeWatermark = !!data.removeWatermark;
+        watermarkToggle.classList.toggle('active', !removeWatermark);
+        watermarkToggle.textContent = removeWatermark ? 'Badge hidden' : 'Badge shown';
         ensureFontLoaded(footerFont);
         renderFooterPreview();
         ensureFontLoaded(navFont);
