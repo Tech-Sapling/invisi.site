@@ -129,6 +129,12 @@
   .el .section-block{width:100%;height:100%;}
   [contenteditable=true]:focus{outline:2px solid var(--amber);outline-offset:2px;}
 
+  @keyframes iv-fade{from{opacity:0}to{opacity:1}}
+  @keyframes iv-slide-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes iv-slide-left{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:translateX(0)}}
+  @keyframes iv-zoom{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+  @keyframes iv-bounce{0%{opacity:0;transform:translateY(20px)}60%{opacity:1;transform:translateY(-6px)}100%{opacity:1;transform:translateY(0)}}
+
   aside#rightpanel{width:300px;flex-shrink:0;background:var(--bg);border-left:1px solid var(--border);display:flex;flex-direction:column;padding:12px;gap:12px;overflow:hidden;}
   .panel-window{background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(60,64,67,0.12);display:flex;flex-direction:column;overflow:hidden;flex:1 1 50%;min-height:0;}
   .win-titlebar{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#FAFBFC;border-bottom:1px solid var(--border);flex-shrink:0;}
@@ -606,7 +612,7 @@
     updateEmpty();
     renderPageTabs();
     pageHeightInput.value = parseInt(p.height,10);
-    if(previewing) updatePreviewBadge();
+    if(previewing){ updatePreviewBadge(); setupMotionPreview(); }
   }
 
   // ---------- undo / redo ----------
@@ -741,7 +747,7 @@
   }
 
   // ---------- element defaults ----------
-  function baseAppearance(){ return {border:0,bordercolor:'#DADCE0',borderstyle:'solid',anim:'none',transdur:'0.6',radius:0,rtl:'1',rtr:'1',rbl:'1',rbr:'1',zindex:'0'}; }
+  function baseAppearance(){ return {border:0,bordercolor:'#DADCE0',borderstyle:'solid',anim:'none',animtrigger:'scroll',transdur:'0.6',radius:0,rtl:'1',rtr:'1',rbl:'1',rbr:'1',zindex:'0'}; }
   function defaultsFor(type){
     const app = baseAppearance();
     switch(type){
@@ -1315,9 +1321,12 @@
       html += `<div class="insp-empty" style="margin-top:-6px;">Turn a corner off to keep it sharp, unaffected by the radius above.</div>`;
     }
 
-    html += `<div class="sec-title">Motion</div>
-      ${field('Entrance animation', `<select id="f_anim">${animOptions(d.anim)}</select>`)}
-      ${field(`Animation speed — ${d.transdur}s`, `<input type="range" id="f_transdur" min="0.2" max="2" step="0.1" value="${d.transdur}">`)}`;
+    html += `<div class="sec-title">Motion</div>${field('Entrance animation', `<select id="f_anim">${animOptions(d.anim)}</select>`)}`;
+    if(d.anim && d.anim!=='none'){
+      html += field('Play animation', `<select id="f_animtrigger"><option value="scroll" ${d.animtrigger!=='load'?'selected':''}>When scrolled into view</option><option value="load" ${d.animtrigger==='load'?'selected':''}>As soon as the page loads</option></select>`);
+      html += field(`Animation speed — ${d.transdur}s`, `<input type="range" id="f_transdur" min="0.2" max="2" step="0.1" value="${d.transdur}">`);
+      html += `<div class="insp-empty" style="margin-top:-6px;">"Scrolled into view" plays this animation the first time someone scrolls the element onto the screen — good for content further down the page. "As soon as the page loads" plays right away, which suits hero content at the very top.</div>`;
+    }
 
     html += `<div class="sec-title">Position &amp; size (%)</div>`;
     if(deviceW!==1200){
@@ -1366,7 +1375,9 @@
     if(fadeAmtR) fadeAmtR.addEventListener('focus', ()=> pushUndo());
     if(fadeAmtR) fadeAmtR.addEventListener('input', ()=>{ d.fadeamt=fadeAmtR.value; renderInner(el); buildInspector(el); });
     const animSel = document.getElementById('f_anim');
-    if(animSel) animSel.addEventListener('change', ()=>{ pushUndo(); d.anim=animSel.value; });
+    if(animSel) animSel.addEventListener('change', ()=>{ pushUndo(); d.anim=animSel.value; buildInspector(el); });
+    const animTriggerSel = document.getElementById('f_animtrigger');
+    if(animTriggerSel) animTriggerSel.addEventListener('change', ()=>{ pushUndo(); d.animtrigger=animTriggerSel.value; });
     const transdurR = document.getElementById('f_transdur');
     if(transdurR) transdurR.addEventListener('focus', ()=> pushUndo());
     if(transdurR) transdurR.addEventListener('input', ()=>{ d.transdur=transdurR.value; buildInspector(el); });
@@ -1424,6 +1435,43 @@
     document.getElementById('delBtn').addEventListener('click', ()=>{ pushUndo(); el.remove(); deselect(); updateEmpty(); });
   }
 
+  // ---------- motion preview (simulates scroll-reveal animations inside the app) ----------
+  let motionObserver = null;
+  function teardownMotion(){
+    if(motionObserver){ motionObserver.disconnect(); motionObserver = null; }
+    canvas.querySelectorAll('.el').forEach(el=>{ el.style.opacity=''; el.style.animation=''; });
+  }
+  function setupMotionPreview(){
+    teardownMotion();
+    if(!previewing) return;
+    const stageEl = document.getElementById('stage');
+    motionObserver = new IntersectionObserver((entries)=>{
+      entries.forEach(entry=>{
+        if(entry.isIntersecting){
+          const t = entry.target, d = t.dataset;
+          t.style.animation = `iv-${d.anim} ${d.transdur||'0.6'}s ease both`;
+          t.style.opacity = '';
+          motionObserver.unobserve(t);
+        }
+      });
+    }, {root: stageEl, threshold:0.15});
+    canvas.querySelectorAll('.el').forEach(el=>{
+      const d = el.dataset;
+      if(d.anim && d.anim!=='none'){
+        if(d.animtrigger==='load'){
+          el.style.opacity='';
+          el.style.animation = `iv-${d.anim} ${d.transdur||'0.6'}s ease both`;
+        } else {
+          el.style.opacity='0';
+          el.style.animation='';
+          motionObserver.observe(el);
+        }
+      } else {
+        el.style.opacity=''; el.style.animation='';
+      }
+    });
+  }
+
   // ---------- preview ----------
   function updatePreviewBadge(){
     if(!previewing || !pages[currentPageId]) return;
@@ -1440,6 +1488,7 @@
     else { previewBadge.classList.remove('show'); }
     document.getElementById('rightpanel').style.visibility = previewing?'hidden':'visible';
     canvas.querySelectorAll('.el').forEach(renderInner);
+    if(previewing) setupMotionPreview(); else teardownMotion();
   });
 
   document.getElementById('clearBtn').addEventListener('click', ()=>{
@@ -1483,7 +1532,15 @@
       let style = `position:absolute;left:${g.left};top:${g.top};width:${g.width};height:${g.height};border-radius:${radiusCSS(d)};z-index:${d.zindex||0};`;
       const bw = parseFloat(d.border)||0;
       if(usesBoxStroke(type,d) && bw>0) style += `border:${bw}px ${d.borderstyle||'solid'} ${d.bordercolor||'#DADCE0'};`;
-      if(d.anim && d.anim!=='none') style += `animation:iv-${d.anim} ${d.transdur||'0.6'}s ease both;`;
+      let scrollAnimAttrs = '';
+      if(d.anim && d.anim!=='none'){
+        if(d.animtrigger==='load'){
+          style += `animation:iv-${d.anim} ${d.transdur||'0.6'}s ease both;`;
+        } else {
+          style += `opacity:0;`;
+          scrollAnimAttrs = ` data-scroll-anim="${d.anim}" data-scroll-dur="${d.transdur||'0.6'}"`;
+        }
+      }
       let inner = '';
       const font = d.font||'Roboto';
       if(type==='heading') inner = `<h2 style="margin:0;color:${d.color};font-size:${d.fs}px;text-align:${d.align};font-family:'${font}',sans-serif;${textStrokeCSS(d)}">${d.html}</h2>`;
@@ -1500,7 +1557,7 @@
       else if(type==='section') inner = `<div style="width:100%;height:100%;background:${d.bg};border-radius:${radiusCSS(d)};"></div>`;
       else if(type==='embed') inner = embedIframeHTML(d, true);
       else if(type==='map') inner = mapIframeHTML(d, true);
-      body += `      <div style="${style}">\n        ${inner}\n      </div>\n`;
+      body += `      <div style="${style}"${scrollAnimAttrs}>\n        ${inner}\n      </div>\n`;
     });
     return body;
   }
@@ -1549,6 +1606,35 @@ window.addEventListener('scroll', function(){
   <footer class="site-footer" style="background:${footerBg};color:${footerTextColor};font-family:'${footerFont}',sans-serif;${footerBgImageCSS}">
     <div class="footer-custom">${footerCustomText || ''}</div>
   </footer>`;
+
+    const scrollRevealScript = `
+(function(){
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var targets = document.querySelectorAll('[data-scroll-anim]');
+  if(!targets.length) return;
+  if(reduceMotion){
+    targets.forEach(function(t){ t.style.opacity = ''; });
+    return;
+  }
+  if(!('IntersectionObserver' in window)){
+    targets.forEach(function(t){
+      t.style.animation = 'iv-'+t.dataset.scrollAnim+' '+(t.dataset.scrollDur||'0.6')+'s ease both';
+      t.style.opacity = '';
+    });
+    return;
+  }
+  var obs = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(entry.isIntersecting){
+        var t = entry.target;
+        t.style.animation = 'iv-'+t.dataset.scrollAnim+' '+(t.dataset.scrollDur||'0.6')+'s ease both';
+        t.style.opacity = '';
+        obs.unobserve(t);
+      }
+    });
+  }, {threshold:0.15});
+  targets.forEach(function(t){ obs.observe(t); });
+})();`;
 
     const watermarkScript = removeWatermark ? '' : `
 (function(){
@@ -1616,6 +1702,7 @@ function invisiGoTo(slug){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 ${scrollScript}
+${scrollRevealScript}
 ${watermarkScript}
 <\/script>
 </body>
